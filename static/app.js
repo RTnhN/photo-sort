@@ -7,7 +7,10 @@ const emptyState = document.getElementById("empty-state");
 
 let images = [];
 let draggedId = null;
+let activeDropTargetId = null;
 const DROP_SLOP_PX = 48;
+const AUTO_SCROLL_EDGE_PX = 140;
+const AUTO_SCROLL_MAX_STEP = 28;
 
 function setStatus(message, type = "info") {
   statusLabel.textContent = message;
@@ -21,12 +24,36 @@ function getDisplayImages() {
 }
 
 function clearDropTargets() {
+  activeDropTargetId = null;
   for (const card of gallery.querySelectorAll(".photo-card")) {
     card.classList.remove("drop-target");
   }
 }
 
+function updateAutoScroll(pointerY) {
+  const distanceToTop = pointerY;
+  const distanceToBottom = window.innerHeight - pointerY;
+
+  if (distanceToTop < AUTO_SCROLL_EDGE_PX) {
+    const intensity = (AUTO_SCROLL_EDGE_PX - distanceToTop) / AUTO_SCROLL_EDGE_PX;
+    window.scrollBy(0, -Math.ceil(intensity * AUTO_SCROLL_MAX_STEP));
+    return;
+  }
+
+  if (distanceToBottom < AUTO_SCROLL_EDGE_PX) {
+    const intensity = (AUTO_SCROLL_EDGE_PX - distanceToBottom) / AUTO_SCROLL_EDGE_PX;
+    window.scrollBy(0, Math.ceil(intensity * AUTO_SCROLL_MAX_STEP));
+  }
+}
+
 function findClosestDropTarget(pointerX, pointerY) {
+  const directTarget = document
+    .elementFromPoint(pointerX, pointerY)
+    ?.closest(".photo-card:not(.excluded):not(.dragging)");
+  if (directTarget && gallery.contains(directTarget)) {
+    return directTarget;
+  }
+
   const candidates = [...gallery.querySelectorAll(".photo-card:not(.excluded):not(.dragging)")];
   let bestCard = null;
   let bestDistance = Number.POSITIVE_INFINITY;
@@ -56,7 +83,14 @@ function findClosestDropTarget(pointerX, pointerY) {
   return bestCard;
 }
 
-function moveImageBefore(targetId) {
+function highlightDropTarget(targetId) {
+  const targetCard = gallery.querySelector(`.photo-card[data-id="${CSS.escape(targetId)}"]`);
+  if (targetCard) {
+    targetCard.classList.add("drop-target");
+  }
+}
+
+function moveImageToTarget(targetId) {
   if (!draggedId || draggedId === targetId) {
     return;
   }
@@ -69,9 +103,30 @@ function moveImageBefore(targetId) {
   }
 
   const [moved] = images.splice(fromIndex, 1);
-  const nextTargetIndex = images.findIndex((item) => item.id === targetId);
-  images.splice(nextTargetIndex, 0, moved);
+  images.splice(toIndex, 0, moved);
   renderGallery();
+}
+
+function updateDragPosition(pointerX, pointerY) {
+  if (!draggedId) {
+    return;
+  }
+
+  updateAutoScroll(pointerY);
+
+  const targetCard = findClosestDropTarget(pointerX, pointerY);
+  if (!targetCard) {
+    clearDropTargets();
+    return;
+  }
+
+  if (activeDropTargetId === targetCard.dataset.id) {
+    return;
+  }
+
+  clearDropTargets();
+  activeDropTargetId = targetCard.dataset.id;
+  highlightDropTarget(targetCard.dataset.id);
 }
 
 function toggleExcluded(imageId) {
@@ -127,6 +182,7 @@ function renderGallery() {
     if (!image.excluded) {
       card.addEventListener("dragstart", (event) => {
         draggedId = image.id;
+        activeDropTargetId = null;
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", image.id);
         card.classList.add("dragging");
@@ -138,29 +194,6 @@ function renderGallery() {
         gallery.classList.remove("is-sorting");
         clearDropTargets();
         renderGallery();
-      });
-
-      card.addEventListener("dragover", (event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        if (!draggedId || draggedId === image.id) {
-          return;
-        }
-
-        const targetCard = findClosestDropTarget(event.clientX, event.clientY);
-        if (!targetCard) {
-          clearDropTargets();
-          return;
-        }
-
-        clearDropTargets();
-        targetCard.classList.add("drop-target");
-        moveImageBefore(targetCard.dataset.id);
-      });
-
-      card.addEventListener("drop", (event) => {
-        event.preventDefault();
-        clearDropTargets();
       });
     }
 
@@ -187,6 +220,32 @@ gallery.addEventListener("dragleave", (event) => {
   if (event.currentTarget === event.target) {
     clearDropTargets();
   }
+});
+
+gallery.addEventListener("dragover", (event) => {
+  if (!draggedId) {
+    return;
+  }
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  updateDragPosition(event.clientX, event.clientY);
+});
+
+gallery.addEventListener("drop", (event) => {
+  event.preventDefault();
+  if (draggedId && activeDropTargetId) {
+    moveImageToTarget(activeDropTargetId);
+  }
+  clearDropTargets();
+});
+
+window.addEventListener("dragover", (event) => {
+  if (!draggedId) {
+    return;
+  }
+
+  updateAutoScroll(event.clientY);
 });
 
 async function selectFolder() {
