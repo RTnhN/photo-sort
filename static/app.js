@@ -4,6 +4,9 @@ const directoryLabel = document.getElementById("directory-label");
 const statusLabel = document.getElementById("status");
 const gallery = document.getElementById("gallery");
 const emptyState = document.getElementById("empty-state");
+const csrfToken = document
+  .querySelector('meta[name="csrf-token"]')
+  ?.getAttribute("content");
 
 let images = [];
 let draggedId = null;
@@ -253,7 +256,12 @@ async function selectFolder() {
   selectFolderButton.disabled = true;
 
   try {
-    const response = await fetch("/api/select-folder", { method: "POST" });
+    const response = await fetch("/api/select-folder", {
+      method: "POST",
+      headers: {
+        "X-CSRF-Token": csrfToken,
+      },
+    });
     const payload = await response.json();
 
     if (!response.ok) {
@@ -296,6 +304,7 @@ async function saveOrder() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-CSRF-Token": csrfToken,
       },
       body: JSON.stringify({
         orderedNames: includedImages.map((image) => image.name),

@@ -3,10 +3,12 @@ from __future__ import annotations
 import mimetypes
 import os
 import re
+import secrets
 from pathlib import Path
 from tkinter import Tk, filedialog
+from urllib.parse import urlsplit
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, abort, jsonify, render_template, request, send_file, session
 
 
 IMAGE_EXTENSIONS = {
@@ -23,8 +25,9 @@ IMAGE_EXTENSIONS = {
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
-
-selected_directory: Path | None = None
+app.config["SECRET_KEY"] = os.environ.get("PHOTO_SORT_SECRET_KEY") or secrets.token_hex(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 
 def list_images(directory: Path) -> list[Path]:
@@ -55,6 +58,56 @@ def choose_directory() -> Path | None:
     if not selected:
         return None
     return Path(selected)
+
+
+def get_csrf_token() -> str:
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def get_selected_directory() -> Path | None:
+    selected = session.get("selected_directory")
+    if not selected:
+        return None
+
+    directory = Path(selected)
+    if not directory.exists() or not directory.is_dir():
+        session.pop("selected_directory", None)
+        return None
+    return directory
+
+
+def set_selected_directory(directory: Path) -> None:
+    session["selected_directory"] = str(directory)
+
+
+def is_same_origin(request_origin: str | None) -> bool:
+    if not request_origin:
+        return False
+
+    origin_parts = urlsplit(request_origin)
+    expected_parts = urlsplit(request.host_url)
+    return (
+        origin_parts.scheme == expected_parts.scheme
+        and origin_parts.netloc == expected_parts.netloc
+    )
+
+
+@app.before_request
+def protect_api_requests():
+    get_csrf_token()
+
+    if request.method != "POST" or not request.path.startswith("/api/"):
+        return
+
+    if not is_same_origin(request.headers.get("Origin")):
+        abort(403)
+
+    if request.headers.get("X-CSRF-Token") != session.get("csrf_token"):
+        abort(403)
 
 
 def rename_images(
@@ -115,32 +168,30 @@ def rename_images(
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", csrf_token=get_csrf_token())
 
 
 @app.post("/api/select-folder")
 def select_folder():
-    global selected_directory
-
     directory = choose_directory()
     if directory is None:
         return jsonify({"cancelled": True, "images": []})
 
     images = list_images(directory)
     if not images:
-        selected_directory = directory
+        set_selected_directory(directory)
         return jsonify(
             {
-                "directory": str(directory),
+                "directory": directory.name,
                 "images": [],
                 "message": "No supported image files were found in that folder.",
             }
         )
 
-    selected_directory = directory
+    set_selected_directory(directory)
     return jsonify(
         {
-            "directory": str(directory),
+            "directory": directory.name,
             "images": [
                 {
                     "id": image.name,
@@ -155,6 +206,7 @@ def select_folder():
 
 @app.get("/image/<path:filename>")
 def get_image(filename: str):
+    selected_directory = get_selected_directory()
     if selected_directory is None:
         return jsonify({"error": "No directory selected."}), 400
 
@@ -173,6 +225,7 @@ def get_image(filename: str):
 
 @app.post("/api/save-order")
 def save_order():
+    selected_directory = get_selected_directory()
     if selected_directory is None:
         return jsonify({"error": "No directory selected."}), 400
 

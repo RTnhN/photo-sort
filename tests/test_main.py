@@ -39,18 +39,30 @@ def client():
         yield test_client
 
 
+def seed_session(client, directory: Path | None = None, csrf_token: str = "test-csrf-token"):
+    with client.session_transaction() as session:
+        session["csrf_token"] = csrf_token
+        if directory is not None:
+            session["selected_directory"] = str(directory)
+    return csrf_token
+
+
 def test_save_order_skips_excluded_images(client, tmp_path: Path):
     touch(tmp_path / "alpha.jpg")
     touch(tmp_path / "bravo.jpg")
     touch(tmp_path / "charlie.jpg")
 
-    MODULE.selected_directory = tmp_path
+    csrf_token = seed_session(client, tmp_path)
 
     response = client.post(
         "/api/save-order",
         json={
             "orderedNames": ["charlie.jpg", "alpha.jpg"],
             "excludedNames": ["bravo.jpg"],
+        },
+        headers={
+            "Origin": "http://localhost",
+            "X-CSRF-Token": csrf_token,
         },
     )
 
@@ -65,3 +77,16 @@ def test_save_order_skips_excluded_images(client, tmp_path: Path):
         "2_alpha.jpg",
         "excludeed_bravo.jpg",
     ]
+
+
+def test_save_order_rejects_missing_csrf(client, tmp_path: Path):
+    touch(tmp_path / "alpha.jpg")
+    seed_session(client, tmp_path)
+
+    response = client.post(
+        "/api/save-order",
+        json={"orderedNames": ["alpha.jpg"], "excludedNames": []},
+        headers={"Origin": "http://localhost"},
+    )
+
+    assert response.status_code == 403
