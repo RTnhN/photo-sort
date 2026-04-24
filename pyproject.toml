@@ -1,0 +1,14 @@
+[project]
+name = "photo-sort"
+version = "0.1.0"
+description = "Local web app for sorting photos and saving the order by renaming files."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "flask>=3.1.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

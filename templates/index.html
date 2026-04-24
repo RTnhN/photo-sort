@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Photo Sort</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <p class="eyebrow">Local Photo Sorter</p>
+        <h1>Pick a folder, drag images into order, then save the filenames.</h1>
+        <p class="intro">
+          Saving renames the files so alphabetical sorting in your file explorer matches the
+          order you arranged here. Use the corner <strong>X</strong> to exclude photos and keep
+          them at the end without renaming them.
+        </p>
+        <div class="actions">
+          <button id="select-folder" class="primary">Select Folder</button>
+          <button id="save-order" class="secondary" disabled>Save Order</button>
+        </div>
+        <p id="directory-label" class="directory">No folder selected.</p>
+        <p id="status" class="status" aria-live="polite"></p>
+      </section>
+
+      <section class="gallery-section">
+        <div id="empty-state" class="empty-state">
+          Your images will appear here after you select a folder.
+        </div>
+        <div id="gallery" class="gallery" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
